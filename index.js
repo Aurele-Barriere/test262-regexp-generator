@@ -4,49 +4,106 @@ const slugify = require('slugify');
 const filenamify = require('filenamify');
 const jsesc = require('jsesc');
 const header = require('./header');
+const ESCAPE_SETS = require('regexpu-core/data/character-class-escape-sets.js');
+const regenerate = require('./regenerate.js');
 
+// The different character class escapes.
 const patterns = {
-    'whitespace class escape': '\\s',
-    'non-whitespace class escape': '\\S',
-    'word class escape': '\\w',
-    'non-word class escape': '\\W',
-    'digit class escape': '\\d',
-    'non-digit class escape': '\\D',
+    's': 'whitespace class escape',
+    'S': 'non-whitespace class escape',
+    'w': 'word class escape',
+    'W': 'non-word class escape',
+    'd': 'digit class escape',
+    'D': 'non-digit class escape',
 };
 
-function buildContent(desc, pattern, range, max, flags, skip180e) {
-    let method;
-    let features = [];
+const negation = {
+    's': 'S',
+    'S': 's',
+    'w': 'W',
+    'W': 'w',
+    'd': 'D',
+    'D': 'd',
+}
 
-    let content = header(`Compare range for ${desc} ${pattern} with flags ${flags}`);
+// For each character class escape, test positive and negative cases.
+const test_cases = [
+    { positivity: true,
+      suffix: '-positive-cases' },
+    { positivity: false,
+      suffix: '-negative-cases' },
+]
+
+// In each test file, test all these flag configurations.
+const flags_configs = {
+    'standard': '',
+    'unicode': 'u',
+    'vflag': 'v',
+}
+
+function buildRegex(pattern, positivity) {
+    return positivity ? `^\\${pattern}+$` : `\\${pattern}`;
+}
+
+function buildRegexes(pattern, positivity) {
+    let regex = buildRegex(pattern, positivity);
+    let reg_str = '';
+    for (const [regexname, flags] of Object.entries(flags_configs)) {
+	reg_str += `const ${regexname} = /${regex}/${flags};\n`;
+    }
+    let all_regexes = Object.keys(flags_configs).toString();
+    reg_str += `const regexes = [${all_regexes}];`;
+    return reg_str;
+}
+
+function buildString(pattern, positivity) {
+    let escape = positivity ? pattern : negation[pattern];
+    let escape_data = ESCAPE_SETS.UNICODE.get(escape);
+    return escape_data.toTestCode();
+}
+
+function buildDescr(pattern, positivity) {
+    let name = patterns[pattern];
+    let descr = positivity ? 'Check positive cases of' : 'Check negative cases of';
+    return `${descr} ${name} \\${pattern}.`;
+}
+    
+
+function buildContent(pattern, positivity) {
+
+    let regexes = buildRegexes(pattern, positivity);
+    let string = buildString(pattern, positivity);
+    let descr = buildDescr(pattern, positivity);
+    let test_negate = positivity ? '!' : '';
+    let err_msg = positivity ? 'Expected full match, but did not match: ' :
+	'Expected no match, but matched: ';
+    
+    let content = header(`${descr}`);
 
     content += `
-const str = buildString({ loneCodePoints: [], ranges: [[0, ${
-    jsesc(max, { numbers: 'hexadecimal' })
-}]] });
+const str = buildString(
+${string}
+);
 
-const re = /${pattern}/${flags};
-const matchingRange = /${range}/${flags};
+${regexes}
 
 const errors = [];
 
-function matching(str) {
-    return str.replace(re, '') === str.replace(matchingRange, '');
-}
-
-if (!matching(str)) {
+for (const regex of regexes) {
+  if (${test_negate}regex.test(str)) {
     // Error, let's find out where
     for (const char of str) {
-        if (!matching(char)) {
-            errors.push('0x' + char.codePointAt(0).toString(16));
-        }
+      if (${test_negate}regex.test(char)) {
+        errors.push('0x' + char.codePointAt(0).toString(16));
+      }
     }
+  }
 }
 
 assert.sameValue(
-    errors.length,
-    0,
-    'Expected matching code points, but received: ' + errors.join(',')
+  errors.length,
+  0,
+  '${err_msg}' + errors.join(',')
 );
 `;
 
@@ -58,44 +115,10 @@ function writeFile(desc, content, suffix = '') {
     fs.writeFileSync(filename, content);
 }
 
-// No additions
-for (const [desc, escape] of Object.entries(patterns)) {
-    const skip180e = escape.toLowerCase().includes('s');
-    [
-        {
-            quantifier: '',
-            flags: '',
-        },
-        {
-            quantifier: '+',
-            flags: '',
-            posCb(u) { return [u, u+u]},
-            suffix: '-plus-quantifier',
-        },
-        {
-            quantifier: '',
-            flags: 'u',
-            max: 0x10FFFF,
-            suffix: '-flags-u',
-        },
-        {
-            quantifier: '+',
-            flags: 'u',
-            posCb(u) { return [u, u+u]},
-            suffix: '-plus-quantifier-flags-u',
-            max: 0x10FFFF,
-        },
-    ].forEach(({quantifier, max = 0xFFFF, flags, suffix, posCb = u => [u], negCb = u => [u]}) => {
-        flags += 'g';
+for (const [pattern, desc] of Object.entries(patterns)) {
+    test_cases.forEach(({positivity, suffix}) => {
 
-        const pattern = `${escape}${quantifier}`;
-        const range = rewritePattern(pattern, flags, {
-            useUnicodeFlag: flags.includes('u')
-        });
-
-        console.log(`${pattern} => ${range}, flags: ${flags}`);
-
-        const content = buildContent(desc, pattern, range, max, flags, skip180e);
+        const content = buildContent(pattern, positivity);
 
         writeFile(desc, content, suffix);
     });

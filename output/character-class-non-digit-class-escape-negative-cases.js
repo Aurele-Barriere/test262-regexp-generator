@@ -1,10 +1,11 @@
 // Copyright (C) 2018 Leo Balter.  All rights reserved.
+// Copyright (C) 2024 Aurèle Barrière.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: prod-CharacterClassEscape
 description: >
-    Compare range for non-whitespace class escape \S+ with flags ug
+    Check negative cases of non-digit class escape \D.
 info: |
     This is a generated test. Please check out
     https://github.com/bocoup/test262-regexp-generator
@@ -37,28 +38,35 @@ features: [String.fromCodePoint]
 includes: [regExpUtils.js]
 ---*/
 
-const str = buildString({ loneCodePoints: [], ranges: [[0, 0x10FFFF]] });
+const str = buildString(
+{
+  loneCodePoints: [],
+  ranges: [
+    [0x000030, 0x000039]
+  ]
+}
+);
 
-const re = /\S+/ug;
-const matchingRange = /[\0-\x08\x0E-\x1F!-\x9F\xA1-\u167F\u1681-\u1FFF\u200B-\u2027\u202A-\u202E\u2030-\u205E\u2060-\u2FFF\u3001-\uFEFE\uFF00-\u{10FFFF}]+/ug;
+const standard = /\D/;
+const unicode = /\D/u;
+const vflag = /\D/v;
+const regexes = [standard,unicode,vflag];
 
 const errors = [];
 
-function matching(str) {
-    return str.replace(re, '') === str.replace(matchingRange, '');
-}
-
-if (!matching(str)) {
+for (const regex of regexes) {
+  if (regex.test(str)) {
     // Error, let's find out where
     for (const char of str) {
-        if (!matching(char)) {
-            errors.push('0x' + char.codePointAt(0).toString(16));
-        }
+      if (regex.test(char)) {
+        errors.push('0x' + char.codePointAt(0).toString(16));
+      }
     }
+  }
 }
 
 assert.sameValue(
-    errors.length,
-    0,
-    'Expected matching code points, but received: ' + errors.join(',')
+  errors.length,
+  0,
+  'Expected no match, but matched: ' + errors.join(',')
 );

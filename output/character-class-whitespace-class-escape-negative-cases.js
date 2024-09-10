@@ -1,10 +1,11 @@
 // Copyright (C) 2018 Leo Balter.  All rights reserved.
+// Copyright (C) 2024 Aurèle Barrière.  All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: prod-CharacterClassEscape
 description: >
-    Compare range for whitespace class escape \s with flags g
+    Check negative cases of whitespace class escape \s.
 info: |
     This is a generated test. Please check out
     https://github.com/bocoup/test262-regexp-generator
@@ -37,28 +38,47 @@ features: [String.fromCodePoint]
 includes: [regExpUtils.js]
 ---*/
 
-const str = buildString({ loneCodePoints: [], ranges: [[0, 0xFFFF]] });
+const str = buildString(
+{
+  loneCodePoints: [],
+  ranges: [
+    [0x00DC00, 0x00DFFF],
+    [0x000000, 0x000008],
+    [0x00000E, 0x00001F],
+    [0x000021, 0x00009F],
+    [0x0000A1, 0x00167F],
+    [0x001681, 0x001FFF],
+    [0x00200B, 0x002027],
+    [0x00202A, 0x00202E],
+    [0x002030, 0x00205E],
+    [0x002060, 0x002FFF],
+    [0x003001, 0x00DBFF],
+    [0x00E000, 0x00FEFE],
+    [0x00FF00, 0x10FFFF]
+  ]
+}
+);
 
-const re = /\s/g;
-const matchingRange = /[\t-\r \xA0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/g;
+const standard = /\s/;
+const unicode = /\s/u;
+const vflag = /\s/v;
+const regexes = [standard,unicode,vflag];
 
 const errors = [];
 
-function matching(str) {
-    return str.replace(re, '') === str.replace(matchingRange, '');
-}
-
-if (!matching(str)) {
+for (const regex of regexes) {
+  if (regex.test(str)) {
     // Error, let's find out where
     for (const char of str) {
-        if (!matching(char)) {
-            errors.push('0x' + char.codePointAt(0).toString(16));
-        }
+      if (regex.test(char)) {
+        errors.push('0x' + char.codePointAt(0).toString(16));
+      }
     }
+  }
 }
 
 assert.sameValue(
-    errors.length,
-    0,
-    'Expected matching code points, but received: ' + errors.join(',')
+  errors.length,
+  0,
+  'Expected no match, but matched: ' + errors.join(',')
 );
